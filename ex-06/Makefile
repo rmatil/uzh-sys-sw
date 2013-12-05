@@ -13,5 +13,4 @@ server.o: server.cpp
 	g++ -c server.cpp
 
 clean:
-	rm -rf *.o client
-	rm -rf *.o server
+	rm -rf *.o client server
