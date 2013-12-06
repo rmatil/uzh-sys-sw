@@ -24,36 +24,43 @@ typedef unsigned int uint;
 class server {
 public:
     server(std::string pPath);
-    ~server() {}
+    ~server() {
+        close(server_sock);
+        close(client_sock);
+        unlink(local.sun_path);
+    }
     
     void run();
     
 private:
     int server_sock;
     int client_sock;
-    size_t recv_msg_length;
+    
     sockaddr_un local;
     sockaddr_un remote;
-    socklen_t addr_size;
-        
-    bool hasWon = false;
-    int has_hit_ctr = 0;
+    
+    size_t recv_msg_length; // length of received message
+    socklen_t addr_size; // length of local socket path
     
     void accept_connect();
     std::string recv_msg();
     void send_msg(std::string pMessage);
     
+    // returns a string which represents the value of the given boolean
+    inline std::string const boolToString(bool b) {
+        return b ? "true" : "false";
+    }
+    // returns a bool which represents the value of the given string
+    inline bool stringToBool(std::string const& s) {
+        return s=="false" ? false : true;
+    }
+        
+    bool hasWon;
+    int has_hit_ctr; // counts the number of hits of the local player
+
     void initalize_playfield();
     bool checkPlayfield(std::string pCoordinates);
     void drawPlayfield();
-    
-    std::string const boolToString(bool b) {
-        return b ? "true" : "false";
-    }
-    
-    bool stringToBool(std::string const& s) {
-        return s=="false" ? false : true;
-    }
     
     // row(column)
     // 0 represents hit which didn't hit

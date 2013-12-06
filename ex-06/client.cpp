@@ -9,11 +9,14 @@
 #include "client.h"
 
 client::client(std::string pPath) {
+    hasWon = false;
+    has_hit_ctr = 0;
     initalize_playfield();
     
     // create socket
     if ((client_sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
         perror("socket");
+        close(client_sock);
         exit(errno);
     }
     
@@ -25,9 +28,9 @@ client::client(std::string pPath) {
     addr_size = (uint) strlen(remote.sun_path + '\0') + sizeof(remote.sun_family)+1;
     if (connect(client_sock, (struct sockaddr*)&remote, addr_size) == -1) {
         perror("connect");
+        close(client_sock);
         exit(errno);
     }
-    
     std::cout << "Connected." << std::endl;
 }
 
@@ -40,25 +43,27 @@ void client::initalize_playfield() {
     
     std::cout << "Type in the position where the boat should be placed. [Range: 1-5]:" << std::endl;
     for (int i=0; i<5; i++) {
-        std::cout << "Boat no " << i+1 << std::endl;
-        std::cout << "xPos > ";
         int xPos;
         int yPos;
+        std::cout << "Boat no " << i+1 << std::endl;
+        std::cout << "xPos> ";
         std::cin >> xPos;
-        std::cout << "yPos > ";
+        std::cout << "yPos> ";
         std::cin >> yPos;
+        if (xPos < 1 || xPos > 5 || yPos < 1 || yPos > 5) {
+            std::cerr << "Your coordinate is out of the playfield. Please try again next time." << std::endl;
+            exit(-1);
+        }
         local_playfield.at(yPos-1).at(xPos-1) = 1;
     }
 }
 
 void client::send_msg(std::string pMessage) {
-   // std::cout << "Sent> ";
     if (write(client_sock, pMessage.c_str()+'\0', strlen(pMessage.c_str())+1) == -1) {
         perror("write");
         close(client_sock);
         exit(errno);
     }
-    //std::cout << pMessage << std::endl;
 }
 
 std::string client::recv_msg() {
@@ -68,19 +73,16 @@ std::string client::recv_msg() {
         close(client_sock);
         exit(errno);
     } else if (recv_msg_length > 0) {
-     //   std::cout << "received msg: " << buffer << std::endl;
+        // only for debugging
+        // std::cout << "received msg: " << buffer << std::endl;
     }
     return std::string(buffer);
 }
 
 bool client::checkPlayfield(std::string pCoordinates) {
-    //std::cout << "'" << pCoordinates << "'" << std::endl;
-
     int xPos = std::atoi(pCoordinates.substr(0, 1).c_str()) - 1;
     int yPos = std::atoi(pCoordinates.substr(2, 1).c_str()) - 1;
     
-    //std::cout << "x: " << xPos << ", " << "y: " << yPos << std::endl;
-
     if (local_playfield.at(yPos).at(xPos) == 1) {
         // hit
         local_playfield.at(yPos).at(xPos) = 2;
@@ -136,25 +138,6 @@ void client::run() {
         }
         send_msg("notWon");
         
-        // check if is full
-        if (recv_msg() == "full") {
-            std::cout << "######################################" << std::endl;
-            std::cout << "##########     GAME END     ##########" << std::endl;
-            std::cout << "##########  NO ONE HAS WON  ##########" << std::endl;
-            std::cout << "######################################" << std::endl;
-            break;
-        }
-        if (ctr == 24) {
-            std::cout << "######################################" << std::endl;
-            std::cout << "##########     GAME END     ##########" << std::endl;
-            std::cout << "##########  NO ONE HAS WON  ##########" << std::endl;
-            std::cout << "######################################" << std::endl;
-            send_msg("full");
-            break;
-        }
-        send_msg("notFull");
-              
-        
         // get enemy coordinates
         // check if hit
         std::cout << "Waiting for enemy player..." << std::endl;
@@ -170,6 +153,20 @@ void client::run() {
         std::cin >> xPos;
         std::cout << "yPos > ";
         std::cin >> yPos;
+        
+        int x = atoi(xPos.c_str());
+        int y = atoi(yPos.c_str());
+        while (x < 1 || x > 5 || y < 1 || y > 5) {
+            std::cout << "Your position is out of the playfield. Please type in again:" << std::endl;
+            std::cout << "xPos > ";
+            std::cin >> xPos;
+            std::cout << "yPos > ";
+            std::cin >> yPos;
+            x = atoi(xPos.c_str());
+            y = atoi(yPos.c_str());
+        }
+
+        
         send_msg(xPos + "/" + yPos);
         
         // receive if hit

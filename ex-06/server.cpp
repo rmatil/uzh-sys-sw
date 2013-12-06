@@ -9,6 +9,10 @@
 #include "server.h"
 
 server::server(std::string pPath) {
+    hasWon = false;
+    has_hit_ctr = 0;
+    
+    // sets up the local playfield
     initalize_playfield();
     
     // create socket
@@ -21,18 +25,22 @@ server::server(std::string pPath) {
     local.sun_family = AF_UNIX;
     strcpy(local.sun_path, pPath.c_str() + '\0');
     if (unlink(local.sun_path) == -1) {
-        // TODO remove after debugging
-        perror("unlink");
+        // only for debugging
+        // perror("unlink");
     }
     addr_size = (uint) strlen(local.sun_path + '\0') + sizeof(local.sun_family)+1;
     if (bind(server_sock, (struct sockaddr *)&local, addr_size) == -1) {
         perror("bind");
+        close(server_sock);
+        unlink(local.sun_path);
         exit(errno);
     }
     
     // listen on the local socket
     if (listen(server_sock, 5) == -1) {
-        perror("liste");
+        perror("listen");
+        close(server_sock);
+        unlink(local.sun_path);
         exit(errno);
     }
 }
@@ -46,13 +54,17 @@ void server::initalize_playfield() {
     
     std::cout << "Type in the position where the boat should be placed. [Range: 1-5]:" << std::endl;
     for (int i=0; i<5; i++) {
-        std::cout << "Boat no " << i+1 << std::endl;
-        std::cout << "xPos> ";
         int xPos;
         int yPos;
+        std::cout << "Boat no " << i+1 << std::endl;
+        std::cout << "xPos> ";
         std::cin >> xPos;
         std::cout << "yPos> ";
         std::cin >> yPos;
+        if (xPos < 1 || xPos > 5 || yPos < 1 || yPos > 5) {
+            std::cerr << "Your coordinate is out of the playfield. Please try again next time." << std::endl;
+            exit(-1);
+        }
         local_playfield.at(yPos-1).at(xPos-1) = 1;
     }
 }
@@ -60,11 +72,13 @@ void server::initalize_playfield() {
 
 void server::accept_connect() {
     socklen_t addr_length;
-    
     std::cout << "Waiting for connections..." << std::endl;
     addr_length = sizeof(remote);
     if ((client_sock = accept(server_sock, (struct sockaddr *)&remote, &addr_length)) == -1) {
         perror("accept");
+        close(server_sock);
+        close(client_sock);
+        unlink(local.sun_path);
         exit(errno);
     }
     std::cout << "Connected." << std::endl;
@@ -75,21 +89,24 @@ std::string server::recv_msg() {
     if ((recv_msg_length = read(client_sock, buffer, 100)) == -1) {
         perror("read");
         close(client_sock);
+        close(server_sock);
+        unlink(local.sun_path);
         exit(errno);
     } else if (recv_msg_length > 0) {
+        // only for debugging
         //std::cout << "received msg: " << buffer << std::endl;
     }
     return std::string(buffer);
 }
 
 void server::send_msg(std::string pMessage) {
-    //std::cout << "Sent> ";
     if (write(client_sock, pMessage.c_str()+'\0', strlen(pMessage.c_str())+1) == -1) {
         perror("write");
         close(client_sock);
+        close(server_sock);
+        unlink(local.sun_path);
         exit(errno);
     }
-    //std::cout << pMessage << std::endl;
 }
 
 void server::run() {
@@ -97,7 +114,7 @@ void server::run() {
     std::cout << "######################################" << std::endl;
     std::cout << "############# GAME STARTS ############" << std::endl;
     std::cout << "######################################" << std::endl;
-    int ctr = 0;
+    
     while (!hasWon) {
         // send current win status
         if (has_hit_ctr == 5) {
@@ -116,24 +133,6 @@ void server::run() {
             std::cout << "######################################" << std::endl;
             break;
         }
-        // check if is full
-        if (ctr == 24) {
-            std::cout << "######################################" << std::endl;
-            std::cout << "##########     GAME END     ##########" << std::endl;
-            std::cout << "##########  NO ONE HAS WON  ##########" << std::endl;
-            std::cout << "######################################" << std::endl;
-            send_msg("full");
-            break;
-        }
-        send_msg("notFull");
-        if (recv_msg() == "full") {
-            std::cout << "######################################" << std::endl;
-            std::cout << "##########     GAME END     ##########" << std::endl;
-            std::cout << "##########  NO ONE HAS WON  ##########" << std::endl;
-            std::cout << "######################################" << std::endl;
-            break;
-        }
-        
         
         std::cout << "Type in the coordinates where to shoot:" << std::endl;
         std::string xPos;
@@ -142,6 +141,18 @@ void server::run() {
         std::cin >> xPos;
         std::cout << "yPos > ";
         std::cin >> yPos;
+        
+        int x = atoi(xPos.c_str());
+        int y = atoi(yPos.c_str());
+        while (x < 1 || x > 5 || y < 1 || y > 5) {
+            std::cout << "Your position is out of the playfield. Please type in again:" << std::endl;
+            std::cout << "xPos > ";
+            std::cin >> xPos;
+            std::cout << "yPos > ";
+            std::cin >> yPos;
+            x = atoi(xPos.c_str());
+            y = atoi(yPos.c_str());
+        }
         send_msg(xPos + "/" + yPos);
         
         // receive isHit msg
@@ -159,7 +170,6 @@ void server::run() {
         bool isHitLocal = checkPlayfield(recv_msg());
         // send true/false
         send_msg(boolToString(isHitLocal));
-        ++ ctr;
         drawPlayfield();
     }
     close(client_sock);
@@ -193,9 +203,6 @@ bool server::checkPlayfield(std::string pCoordinates) {
     //std::cout << "'" << pCoordinates << "'" << std::endl;
     int xPos = std::atoi(pCoordinates.substr(0, 1).c_str()) - 1;
     int yPos = std::atoi(pCoordinates.substr(2, 1).c_str()) - 1;
-    
-    //std::cout << "x: " << xPos << ", " << "y: " << yPos << std::endl;
-    
     if (local_playfield.at(yPos).at(xPos) == 1) {
         // hit
         local_playfield.at(yPos).at(xPos) = 2;

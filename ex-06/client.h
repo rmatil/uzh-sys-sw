@@ -23,36 +23,35 @@ typedef unsigned int uint;
 class client {
 public:
     client(std::string pPath);
-    ~client() {};
-    
+    ~client() { close(client_sock); };
     void run();
     
 private:
+    struct sockaddr_un remote;
     int client_sock;
+    
     size_t recv_msg_length;
     socklen_t addr_size;
-    struct sockaddr_un remote;
-    
-    bool hasWon = false;
-    
-    int has_hit_ctr = 0;
     
     void send_msg(std::string pMessage);
     std::string recv_msg();
     
-    std::string const boolToString(bool b) {
+    // returns a string which represents the value of the given boolean
+    inline std::string const boolToString(bool b) {
         return b ? "true" : "false";
     }
-    
-    bool stringToBool(std::string const& s) {
+    // returns a bool which represents the value of the given string
+    inline bool stringToBool(std::string const& s) {
         return s=="false" ? false : true;
     }
     
+    bool hasWon;
+    int has_hit_ctr;
+    
     bool checkPlayfield(std::string pCoordinates);
-    
     void drawPlayfield();
-    
     void initalize_playfield();
+    
     // row(column)
     // 0 represents shot which didn't hit
     // 1 represents boat
